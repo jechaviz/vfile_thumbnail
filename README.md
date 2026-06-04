@@ -7,6 +7,7 @@ This library mirrors Teedy's image variant sizing:
 - `web`: max 1280 px
 - `thumb`: max 256 px
 - generated image variants are JPEG
+- text variants render a lightweight document poster JPEG with bitmap text
 - non-renderable files can use PNG placeholders
 
 It is intentionally separate from `vfile_preview`, which only models preview UI

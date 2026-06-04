@@ -52,6 +52,20 @@ fn test_placeholder_variant_is_png() {
 	assert variant.bytes[1] == 0x50
 }
 
+fn test_text_variant_renders_jpeg_document_preview() {
+	variant := text_variant_for_size(TextVariantInput{
+		name: 'notes.txt'
+		text: 'Line one\nLine two with punctuation: ok!'
+	}, 'thumb')!
+
+	assert variant.mime_type == 'image/jpeg'
+	assert variant.width == 192
+	assert variant.height == 256
+	assert variant.bytes.len > 0
+	assert variant.bytes[0] == 0xff
+	assert variant.bytes[1] == 0xd8
+}
+
 fn write_test_png(path string, width int, height int) ! {
 	mut pixels := []u8{len: width * height * 4}
 	for y in 0 .. height {
