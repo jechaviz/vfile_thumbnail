@@ -67,6 +67,18 @@ fn test_placeholder_variant_is_png() {
 	assert variant.bytes[1] == 0x50
 }
 
+fn test_video_placeholder_variant_uses_teedy_sizes() {
+	thumb := video_placeholder_variant_for_size('thumb')!
+	web := video_placeholder_variant_for_size('web')!
+
+	assert thumb.mime_type == 'image/png'
+	assert thumb.width == teedy_thumb_variant_max
+	assert thumb.height == teedy_thumb_variant_max
+	assert web.mime_type == 'image/png'
+	assert web.width == 512
+	assert web.height == 288
+}
+
 fn test_text_variant_renders_jpeg_document_preview() {
 	variant := text_variant_for_size(TextVariantInput{
 		name: 'notes.txt'
