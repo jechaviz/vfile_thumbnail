@@ -41,6 +41,21 @@ fn test_image_variant_does_not_upscale_small_images() {
 	assert variant.mime_type == 'image/jpeg'
 }
 
+fn test_image_info_reads_source_dimensions() {
+	root := os.join_path(os.temp_dir(), 'vfile-thumbnail-info-${os.getpid()}')
+	os.mkdir_all(root)!
+	defer {
+		os.rmdir_all(root) or {}
+	}
+	source := os.join_path(root, 'info.png')
+	write_test_png(source, 7, 5)!
+
+	info := image_info_from_disk(source)!
+
+	assert info.width == 7
+	assert info.height == 5
+}
+
 fn test_placeholder_variant_is_png() {
 	variant := placeholder_variant_for_size('thumb')!
 
