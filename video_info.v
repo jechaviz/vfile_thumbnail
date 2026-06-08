@@ -6,8 +6,11 @@ const max_video_probe_bytes = 64 * 1024 * 1024
 
 pub struct VideoInfo {
 pub:
-	width  int
-	height int
+	width     int
+	height    int
+	container string
+	codec_id  string
+	codec     string
 }
 
 pub fn video_info_from_disk(path string) !VideoInfo {
@@ -17,14 +20,51 @@ pub fn video_info_from_disk(path string) !VideoInfo {
 	if os.file_size(path) > u64(max_video_probe_bytes) {
 		return error('video metadata probe exceeds limit')
 	}
-	return video_info_from_mp4_bytes(os.read_bytes(path)!)!
+	data := os.read_bytes(path)!
+	return video_info_from_bytes(data)!
+}
+
+pub fn video_text_from_disk(path string, mime_type string) !string {
+	info := video_info_from_disk(path)!
+	return video_text_from_info(info, mime_type)
+}
+
+pub fn video_text_from_info(info VideoInfo, mime_type string) string {
+	mut lines := []string{}
+	format := video_format_label(info, mime_type)
+	if format != '' {
+		lines << 'Format: ${format}'
+	}
+	if info.codec_id.trim_space() != '' {
+		lines << 'Codec ID: ${info.codec_id}'
+	}
+	if info.codec.trim_space() != '' {
+		lines << 'Codec: ${info.codec}'
+	}
+	if info.width > 0 {
+		lines << 'Width: ${info.width}'
+	}
+	if info.height > 0 {
+		lines << 'Height: ${info.height}'
+	}
+	return lines.join('\n')
+}
+
+fn video_info_from_bytes(data []u8) !VideoInfo {
+	return video_info_from_mp4_bytes(data) or { video_info_from_webm_bytes(data)! }
 }
 
 fn video_info_from_mp4_bytes(data []u8) !VideoInfo {
 	info := video_info_from_mp4_boxes(data, 0, data.len, 0) or {
 		return error('video dimensions not found')
 	}
-	return info
+	return VideoInfo{
+		width:     info.width
+		height:    info.height
+		container: 'MP4'
+		codec_id:  info.codec_id
+		codec:     info.codec
+	}
 }
 
 fn video_info_from_mp4_boxes(data []u8, start int, end int, depth int) ?VideoInfo {
@@ -94,6 +134,148 @@ fn video_info_from_tkhd(payload []u8) ?VideoInfo {
 	return VideoInfo{
 		width:  width
 		height: height
+	}
+}
+
+struct WebmProbe {
+mut:
+	width    int
+	height   int
+	codec_id string
+}
+
+struct EbmlElement {
+	id            u64
+	payload_start int
+	payload_end   int
+	next          int
+}
+
+fn video_info_from_webm_bytes(data []u8) !VideoInfo {
+	mut probe := WebmProbe{}
+	webm_probe_range(data, 0, data.len, 0, mut probe)
+	if probe.width <= 0 && probe.height <= 0 && probe.codec_id == '' {
+		return error('WebM metadata not found')
+	}
+	return VideoInfo{
+		width:     probe.width
+		height:    probe.height
+		container: 'WebM'
+		codec_id:  probe.codec_id
+		codec:     video_codec_label(probe.codec_id)
+	}
+}
+
+fn webm_probe_range(data []u8, start int, end int, depth int, mut probe WebmProbe) {
+	if depth > 12 || start < 0 || end > data.len || start >= end {
+		return
+	}
+	mut i := start
+	for i < end {
+		element := read_ebml_element(data, i, end) or { break }
+		match element.id {
+			0x86 {
+				probe.codec_id = read_ebml_text(data[element.payload_start..element.payload_end])
+			}
+			0xb0 {
+				probe.width = int(read_ebml_uint(data[element.payload_start..element.payload_end]))
+			}
+			0xba {
+				probe.height = int(read_ebml_uint(data[element.payload_start..element.payload_end]))
+			}
+			0x18538067, 0x1654ae6b, 0xae, 0xe0, 0x1549a966 {
+				webm_probe_range(data, element.payload_start, element.payload_end, depth + 1, mut
+					probe)
+			}
+			else {}
+		}
+
+		i = element.next
+	}
+}
+
+fn read_ebml_element(data []u8, start int, end int) ?EbmlElement {
+	id, id_len := read_ebml_vint(data, start, end, true) or { return none }
+	size, size_len := read_ebml_vint(data, start + id_len, end, false) or { return none }
+	payload_start := start + id_len + size_len
+	if size > u64(end - payload_start) {
+		return none
+	}
+	payload_end := payload_start + int(size)
+	return EbmlElement{
+		id:            id
+		payload_start: payload_start
+		payload_end:   payload_end
+		next:          payload_end
+	}
+}
+
+fn read_ebml_vint(data []u8, start int, end int, keep_marker bool) ?(u64, int) {
+	if start >= end {
+		return none
+	}
+	first := data[start]
+	if first == 0 {
+		return none
+	}
+	mut mask := u8(0x80)
+	mut length := 1
+	for length <= 8 && (first & mask) == 0 {
+		mask >>= 1
+		length++
+	}
+	if length > 8 || start + length > end {
+		return none
+	}
+	mut value := if keep_marker { u64(first) } else { u64(first & (mask - 1)) }
+	for offset in 1 .. length {
+		value = (value << 8) | u64(data[start + offset])
+	}
+	return value, length
+}
+
+fn read_ebml_uint(bytes []u8) u64 {
+	mut value := u64(0)
+	for byte in bytes {
+		value = (value << 8) | u64(byte)
+	}
+	return value
+}
+
+fn read_ebml_text(bytes []u8) string {
+	mut out := []u8{}
+	for byte in bytes {
+		if byte == 0 {
+			break
+		}
+		out << byte
+	}
+	return out.bytestr().trim_space()
+}
+
+fn video_format_label(info VideoInfo, mime_type string) string {
+	if info.container.trim_space() != '' {
+		return info.container
+	}
+	mime := mime_type.to_lower()
+	if mime == 'video/webm' {
+		return 'WebM'
+	}
+	if mime == 'video/mp4' {
+		return 'MP4'
+	}
+	return ''
+}
+
+fn video_codec_label(codec_id string) string {
+	clean := codec_id.trim_space().to_upper()
+	return match clean {
+		'V_VP9' { 'VP9' }
+		'V_VP8' { 'VP8' }
+		'V_AV1' { 'AV1' }
+		'V_MPEG4/ISO/AVC' { 'H.264 AVC' }
+		'V_MPEGH/ISO/HEVC' { 'H.265 HEVC' }
+		else { codec_id.trim_space() }
 	}
 }
 
