@@ -1,8 +1,5 @@
 module vfile_thumbnail
 
-import os
-import time
-
 fn test_video_info_reads_webm_codec_and_dimensions() {
 	info := video_info_from_webm_bytes(webm_test_file_bytes('V_VP9', 1920, 1080))!
 	assert info.container == 'WebM'
@@ -10,25 +7,6 @@ fn test_video_info_reads_webm_codec_and_dimensions() {
 	assert info.codec == 'VP9'
 	assert info.width == 1920
 	assert info.height == 1080
-}
-
-fn test_video_text_from_disk_emits_indexable_webm_metadata() {
-	root := os.join_path(os.temp_dir(), 'vfile_thumbnail_webm_${time.now().unix_milli()}')
-	os.rmdir_all(root) or {}
-	os.mkdir_all(root)!
-	defer {
-		os.rmdir_all(root) or {}
-	}
-	path := os.join_path(root, 'clip.webm')
-	os.write_file_array(path, webm_test_file_bytes('V_VP9', 640, 360))!
-
-	text := video_text_from_disk(path, 'video/webm')!
-
-	assert text.contains('Format: WebM')
-	assert text.contains('Codec ID: V_VP9')
-	assert text.contains('Codec: VP9')
-	assert text.contains('Width: 640')
-	assert text.contains('Height: 360')
 }
 
 fn webm_test_file_bytes(codec_id string, width int, height int) []u8 {

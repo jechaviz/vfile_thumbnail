@@ -24,32 +24,6 @@ pub fn video_info_from_disk(path string) !VideoInfo {
 	return video_info_from_bytes(data)!
 }
 
-pub fn video_text_from_disk(path string, mime_type string) !string {
-	info := video_info_from_disk(path)!
-	return video_text_from_info(info, mime_type)
-}
-
-pub fn video_text_from_info(info VideoInfo, mime_type string) string {
-	mut lines := []string{}
-	format := video_format_label(info, mime_type)
-	if format != '' {
-		lines << 'Format: ${format}'
-	}
-	if info.codec_id.trim_space() != '' {
-		lines << 'Codec ID: ${info.codec_id}'
-	}
-	if info.codec.trim_space() != '' {
-		lines << 'Codec: ${info.codec}'
-	}
-	if info.width > 0 {
-		lines << 'Width: ${info.width}'
-	}
-	if info.height > 0 {
-		lines << 'Height: ${info.height}'
-	}
-	return lines.join('\n')
-}
-
 fn video_info_from_bytes(data []u8) !VideoInfo {
 	return video_info_from_mp4_bytes(data) or { video_info_from_webm_bytes(data)! }
 }
@@ -251,20 +225,6 @@ fn read_ebml_text(bytes []u8) string {
 		out << byte
 	}
 	return out.bytestr().trim_space()
-}
-
-fn video_format_label(info VideoInfo, mime_type string) string {
-	if info.container.trim_space() != '' {
-		return info.container
-	}
-	mime := mime_type.to_lower()
-	if mime == 'video/webm' {
-		return 'WebM'
-	}
-	if mime == 'video/mp4' {
-		return 'MP4'
-	}
-	return ''
 }
 
 fn video_codec_label(codec_id string) string {
