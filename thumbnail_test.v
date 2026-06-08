@@ -79,6 +79,21 @@ fn test_video_placeholder_variant_uses_teedy_sizes() {
 	assert web.height == 288
 }
 
+fn test_video_placeholder_variant_uses_source_aspect_ratio() {
+	thumb := video_placeholder_variant_for_size_with_dimensions('thumb', 720, 1280)!
+	web := video_placeholder_variant_for_size_with_dimensions('web', 720, 1280)!
+	assert thumb.width == 144
+	assert thumb.height == 256
+	assert web.width == 288
+	assert web.height == 512
+}
+
+fn test_video_info_reads_mp4_track_header_dimensions() {
+	info := video_info_from_mp4_bytes(mp4_test_file_bytes(720, 1280))!
+	assert info.width == 720
+	assert info.height == 1280
+}
+
 fn test_text_variant_renders_jpeg_document_preview() {
 	variant := text_variant_for_size(TextVariantInput{
 		name: 'notes.txt'
@@ -105,4 +120,38 @@ fn write_test_png(path string, width int, height int) ! {
 		}
 	}
 	stbi.stbi_write_png(path, width, height, 4, pixels.data, width * 4)!
+}
+
+fn mp4_test_file_bytes(width int, height int) []u8 {
+	return mp4_test_box('ftyp', 'isom'.bytes()) +
+		mp4_test_box('moov', mp4_test_box('trak', mp4_test_tkhd(width, height)))
+}
+
+fn mp4_test_tkhd(width int, height int) []u8 {
+	mut payload := []u8{len: 84}
+	write_test_be_u32(mut payload, 76, u32(width) << 16)
+	write_test_be_u32(mut payload, 80, u32(height) << 16)
+	return mp4_test_box('tkhd', payload)
+}
+
+fn mp4_test_box(kind string, payload []u8) []u8 {
+	mut out := []u8{}
+	append_test_be_u32(mut out, u32(payload.len + 8))
+	out << kind.bytes()[..4]
+	out << payload
+	return out
+}
+
+fn append_test_be_u32(mut out []u8, value u32) {
+	out << u8(value >> 24)
+	out << u8((value >> 16) & 0xff)
+	out << u8((value >> 8) & 0xff)
+	out << u8(value & 0xff)
+}
+
+fn write_test_be_u32(mut out []u8, at int, value u32) {
+	out[at] = u8(value >> 24)
+	out[at + 1] = u8((value >> 16) & 0xff)
+	out[at + 2] = u8((value >> 8) & 0xff)
+	out[at + 3] = u8(value & 0xff)
 }

@@ -11,6 +11,26 @@ pub fn video_placeholder_variant_for_size(size string) !Variant {
 	}
 }
 
+pub fn video_placeholder_variant_for_size_with_dimensions(size string, source_width int, source_height int) !Variant {
+	if source_width <= 0 || source_height <= 0 {
+		return video_placeholder_variant_for_size(size)
+	}
+	width, height := match size {
+		'web' {
+			fit_image_dimensions(source_width, source_height, 512, 512)
+		}
+		'thumb' {
+			fit_image_dimensions(source_width, source_height, teedy_thumb_variant_max,
+				teedy_thumb_variant_max)
+		}
+		else {
+			return error('video placeholder size must be web or thumb')
+		}
+	}
+
+	return video_placeholder_variant(width, height)
+}
+
 fn video_placeholder_variant(width int, height int) !Variant {
 	mut pixels := new_rgba_canvas(width, height, Color{17, 24, 39, 255})
 	draw_video_frame(mut pixels, width, height)
