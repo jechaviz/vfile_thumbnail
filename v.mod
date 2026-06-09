@@ -1,7 +1,7 @@
 Module {
 	name: 'vfile_thumbnail'
 	description: 'Pure V thumbnail and web image variant generation for document files.'
-	version: '0.5.0'
+	version: '0.5.1'
 	license: 'MIT'
 	dependencies: []
 }

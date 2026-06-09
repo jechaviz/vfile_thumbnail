@@ -10,6 +10,8 @@ This library mirrors Teedy's image variant sizing:
 - text variants render a lightweight document poster JPEG with bitmap text
 - MP4 containers with `tkhd` dimensions can drive aspect-aware video
   placeholders
+- WebM containers expose track-aware video dimensions and codec metadata even
+  when audio tracks follow the video track
 - non-renderable files can use PNG placeholders
 
 It is intentionally separate from `vfile_preview`, which only models preview UI

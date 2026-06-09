@@ -113,9 +113,19 @@ fn video_info_from_tkhd(payload []u8) ?VideoInfo {
 
 struct WebmProbe {
 mut:
-	width    int
-	height   int
-	codec_id string
+	width       int
+	height      int
+	codec_id    string
+	found_video bool
+	found_any   bool
+}
+
+struct WebmTrackProbe {
+mut:
+	width      int
+	height     int
+	codec_id   string
+	track_type int
 }
 
 struct EbmlElement {
@@ -148,16 +158,32 @@ fn webm_probe_range(data []u8, start int, end int, depth int, mut probe WebmProb
 	for i < end {
 		element := read_ebml_element(data, i, end) or { break }
 		match element.id {
+			0xae {
+				mut track := WebmTrackProbe{}
+				webm_track_probe_range(data, element.payload_start, element.payload_end, depth + 1, mut
+					track)
+				probe.apply_track(track)
+			}
 			0x86 {
-				probe.codec_id = read_ebml_text(data[element.payload_start..element.payload_end])
+				if !probe.found_video && probe.codec_id == '' {
+					probe.codec_id =
+						read_ebml_text(data[element.payload_start..element.payload_end])
+					probe.found_any = true
+				}
 			}
 			0xb0 {
-				probe.width = int(read_ebml_uint(data[element.payload_start..element.payload_end]))
+				if !probe.found_video {
+					probe.width = int(read_ebml_uint(data[element.payload_start..element.payload_end]))
+					probe.found_any = true
+				}
 			}
 			0xba {
-				probe.height = int(read_ebml_uint(data[element.payload_start..element.payload_end]))
+				if !probe.found_video {
+					probe.height = int(read_ebml_uint(data[element.payload_start..element.payload_end]))
+					probe.found_any = true
+				}
 			}
-			0x18538067, 0x1654ae6b, 0xae, 0xe0, 0x1549a966 {
+			0x18538067, 0x1654ae6b, 0xe0, 0x1549a966 {
 				webm_probe_range(data, element.payload_start, element.payload_end, depth + 1, mut
 					probe)
 			}
@@ -166,6 +192,68 @@ fn webm_probe_range(data []u8, start int, end int, depth int, mut probe WebmProb
 
 		i = element.next
 	}
+}
+
+fn webm_track_probe_range(data []u8, start int, end int, depth int, mut track WebmTrackProbe) {
+	if depth > 12 || start < 0 || end > data.len || start >= end {
+		return
+	}
+	mut i := start
+	for i < end {
+		element := read_ebml_element(data, i, end) or { break }
+		match element.id {
+			0x83 {
+				track.track_type = int(read_ebml_uint(data[element.payload_start..element.payload_end]))
+			}
+			0x86 {
+				track.codec_id = read_ebml_text(data[element.payload_start..element.payload_end])
+			}
+			0xb0 {
+				track.width = int(read_ebml_uint(data[element.payload_start..element.payload_end]))
+			}
+			0xba {
+				track.height = int(read_ebml_uint(data[element.payload_start..element.payload_end]))
+			}
+			0xe0, 0xe1 {
+				webm_track_probe_range(data, element.payload_start, element.payload_end, depth + 1, mut
+					track)
+			}
+			else {}
+		}
+
+		i = element.next
+	}
+}
+
+fn (mut probe WebmProbe) apply_track(track WebmTrackProbe) {
+	if !track.has_data() {
+		return
+	}
+	if track.is_video_candidate() {
+		if !probe.found_video {
+			probe.width = track.width
+			probe.height = track.height
+			probe.codec_id = track.codec_id
+			probe.found_video = true
+			probe.found_any = true
+		}
+		return
+	}
+	if !probe.found_video && !probe.found_any {
+		probe.width = track.width
+		probe.height = track.height
+		probe.codec_id = track.codec_id
+		probe.found_any = true
+	}
+}
+
+fn (track WebmTrackProbe) has_data() bool {
+	return track.width > 0 || track.height > 0 || track.codec_id.trim_space() != ''
+}
+
+fn (track WebmTrackProbe) is_video_candidate() bool {
+	codec := track.codec_id.trim_space().to_upper()
+	return track.track_type == 1 || track.width > 0 || track.height > 0 || codec.starts_with('V_')
 }
 
 fn read_ebml_element(data []u8, start int, end int) ?EbmlElement {

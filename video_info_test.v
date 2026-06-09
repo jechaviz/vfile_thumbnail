@@ -9,11 +9,32 @@ fn test_video_info_reads_webm_codec_and_dimensions() {
 	assert info.height == 1080
 }
 
+fn test_video_info_prefers_video_track_when_audio_track_follows() {
+	info :=
+		video_info_from_webm_bytes(webm_test_file_bytes_with_audio('V_VP9', 'A_OPUS', 1920, 1080))!
+	assert info.container == 'WebM'
+	assert info.codec_id == 'V_VP9'
+	assert info.codec == 'VP9'
+	assert info.width == 1920
+	assert info.height == 1080
+}
+
 fn webm_test_file_bytes(codec_id string, width int, height int) []u8 {
 	video := ebml_test_element([u8(0xe0)], ebml_test_element([u8(0xb0)], ebml_test_uint(width)) +
 		ebml_test_element([u8(0xba)], ebml_test_uint(height)))
 	track := ebml_test_element([u8(0xae)], ebml_test_element([u8(0x86)], codec_id.bytes()) + video)
 	tracks := ebml_test_element([u8(0x16), 0x54, 0xae, 0x6b], track)
+	return ebml_test_element([u8(0x18), 0x53, 0x80, 0x67], tracks)
+}
+
+fn webm_test_file_bytes_with_audio(video_codec_id string, audio_codec_id string, width int, height int) []u8 {
+	video := ebml_test_element([u8(0xe0)], ebml_test_element([u8(0xb0)], ebml_test_uint(width)) +
+		ebml_test_element([u8(0xba)], ebml_test_uint(height)))
+	video_track := ebml_test_element([u8(0xae)], ebml_test_element([u8(0x83)], ebml_test_uint(1)) +
+		ebml_test_element([u8(0x86)], video_codec_id.bytes()) + video)
+	audio_track := ebml_test_element([u8(0xae)], ebml_test_element([u8(0x83)], ebml_test_uint(2)) +
+		ebml_test_element([u8(0x86)], audio_codec_id.bytes()))
+	tracks := ebml_test_element([u8(0x16), 0x54, 0xae, 0x6b], video_track + audio_track)
 	return ebml_test_element([u8(0x18), 0x53, 0x80, 0x67], tracks)
 }
 
