@@ -31,21 +31,33 @@ fn video_info_from_bytes(data []u8) !VideoInfo {
 }
 
 fn video_info_from_mp4_bytes(data []u8) !VideoInfo {
-	info := video_info_from_mp4_boxes(data, 0, data.len, 0) or {
-		return error('video dimensions not found')
+	mut probe := Mp4Probe{}
+	mp4_probe_boxes(data, 0, data.len, 0, mut probe)
+	if !probe.has_data() {
+		return error('video metadata not found')
 	}
 	return VideoInfo{
-		width:     info.width
-		height:    info.height
-		container: 'MP4'
-		codec_id:  info.codec_id
-		codec:     info.codec
+		width:       probe.width
+		height:      probe.height
+		container:   'MP4'
+		duration_ms: probe.duration_ms
 	}
 }
 
-fn video_info_from_mp4_boxes(data []u8, start int, end int, depth int) ?VideoInfo {
+struct Mp4Probe {
+mut:
+	width       int
+	height      int
+	duration_ms int
+}
+
+fn (probe Mp4Probe) has_data() bool {
+	return probe.width > 0 || probe.height > 0 || probe.duration_ms > 0
+}
+
+fn mp4_probe_boxes(data []u8, start int, end int, depth int, mut probe Mp4Probe) {
 	if depth > 8 || start < 0 || end > data.len || start >= end {
-		return none
+		return
 	}
 	mut i := start
 	for i + 8 <= end {
@@ -56,19 +68,24 @@ fn video_info_from_mp4_boxes(data []u8, start int, end int, depth int) ?VideoInf
 		kind := data[i + 4..i + 8].bytestr()
 		payload_start := i + header_size
 		payload_end := i + box_size
-		if kind == 'tkhd' {
+		if kind == 'mvhd' {
+			if duration_ms := video_duration_from_mvhd(data[payload_start..payload_end]) {
+				probe.duration_ms = duration_ms
+			}
+		} else if kind == 'tkhd' {
 			if info := video_info_from_tkhd(data[payload_start..payload_end]) {
-				return info
+				if probe.width <= 0 {
+					probe.width = info.width
+				}
+				if probe.height <= 0 {
+					probe.height = info.height
+				}
 			}
-		}
-		if kind in ['moov', 'trak', 'edts', 'mdia', 'minf', 'stbl'] {
-			if info := video_info_from_mp4_boxes(data, payload_start, payload_end, depth + 1) {
-				return info
-			}
+		} else if kind in ['moov', 'trak', 'edts', 'mdia', 'minf', 'stbl'] {
+			mp4_probe_boxes(data, payload_start, payload_end, depth + 1, mut probe)
 		}
 		i += box_size
 	}
-	return none
 }
 
 fn mp4_box_size(data []u8, start int, end int) ?(int, int) {
@@ -111,6 +128,29 @@ fn video_info_from_tkhd(payload []u8) ?VideoInfo {
 		width:  width
 		height: height
 	}
+}
+
+fn video_duration_from_mvhd(payload []u8) ?int {
+	if payload.len < 24 {
+		return none
+	}
+	version := payload[0]
+	timescale_at := if version == 1 { 20 } else { 12 }
+	duration_at := if version == 1 { 24 } else { 16 }
+	duration_len := if version == 1 { 8 } else { 4 }
+	if duration_at + duration_len > payload.len {
+		return none
+	}
+	timescale := be_u32(payload, timescale_at)
+	if timescale == 0 {
+		return none
+	}
+	duration := if version == 1 {
+		be_u64(payload, duration_at)
+	} else {
+		u64(be_u32(payload, duration_at))
+	}
+	return int(((duration * 1000) + u64(timescale / 2)) / u64(timescale))
 }
 
 struct WebmProbe {

@@ -92,6 +92,7 @@ fn test_video_info_reads_mp4_track_header_dimensions() {
 	info := video_info_from_mp4_bytes(mp4_test_file_bytes(720, 1280))!
 	assert info.width == 720
 	assert info.height == 1280
+	assert info.duration_ms == 1250
 }
 
 fn test_text_variant_renders_jpeg_document_preview() {
@@ -123,8 +124,15 @@ fn write_test_png(path string, width int, height int) ! {
 }
 
 fn mp4_test_file_bytes(width int, height int) []u8 {
-	return mp4_test_box('ftyp', 'isom'.bytes()) +
-		mp4_test_box('moov', mp4_test_box('trak', mp4_test_tkhd(width, height)))
+	return mp4_test_box('ftyp', 'isom'.bytes()) + mp4_test_box('moov', mp4_test_mvhd(1000, 1250) +
+		mp4_test_box('trak', mp4_test_tkhd(width, height)))
+}
+
+fn mp4_test_mvhd(timescale int, duration int) []u8 {
+	mut payload := []u8{len: 24}
+	write_test_be_u32(mut payload, 12, u32(timescale))
+	write_test_be_u32(mut payload, 16, u32(duration))
+	return mp4_test_box('mvhd', payload)
 }
 
 fn mp4_test_tkhd(width int, height int) []u8 {
