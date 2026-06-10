@@ -1,16 +1,18 @@
 module vfile_thumbnail
 
+import math.bits
 import os
 
 const max_video_probe_bytes = 64 * 1024 * 1024
 
 pub struct VideoInfo {
 pub:
-	width     int
-	height    int
-	container string
-	codec_id  string
-	codec     string
+	width       int
+	height      int
+	container   string
+	codec_id    string
+	codec       string
+	duration_ms int
 }
 
 pub fn video_info_from_disk(path string) !VideoInfo {
@@ -113,11 +115,13 @@ fn video_info_from_tkhd(payload []u8) ?VideoInfo {
 
 struct WebmProbe {
 mut:
-	width       int
-	height      int
-	codec_id    string
-	found_video bool
-	found_any   bool
+	width             int
+	height            int
+	codec_id          string
+	duration_ms       int
+	timecode_scale_ns int = 1000000
+	found_video       bool
+	found_any         bool
 }
 
 struct WebmTrackProbe {
@@ -142,11 +146,12 @@ fn video_info_from_webm_bytes(data []u8) !VideoInfo {
 		return error('WebM metadata not found')
 	}
 	return VideoInfo{
-		width:     probe.width
-		height:    probe.height
-		container: 'WebM'
-		codec_id:  probe.codec_id
-		codec:     video_codec_label(probe.codec_id)
+		width:       probe.width
+		height:      probe.height
+		container:   'WebM'
+		codec_id:    probe.codec_id
+		codec:       video_codec_label(probe.codec_id)
+		duration_ms: probe.duration_ms
 	}
 }
 
@@ -180,6 +185,20 @@ fn webm_probe_range(data []u8, start int, end int, depth int, mut probe WebmProb
 			0xba {
 				if !probe.found_video {
 					probe.height = int(read_ebml_uint(data[element.payload_start..element.payload_end]))
+					probe.found_any = true
+				}
+			}
+			0x2ad7b1 {
+				scale := int(read_ebml_uint(data[element.payload_start..element.payload_end]))
+				if scale > 0 {
+					probe.timecode_scale_ns = scale
+				}
+			}
+			0x4489 {
+				duration := read_ebml_float(data[element.payload_start..element.payload_end])
+				if duration > 0 {
+					probe.duration_ms = int((duration * f64(probe.timecode_scale_ns) / 1000000.0) +
+						0.5)
 					probe.found_any = true
 				}
 			}
@@ -302,6 +321,17 @@ fn read_ebml_uint(bytes []u8) u64 {
 		value = (value << 8) | u64(byte)
 	}
 	return value
+}
+
+fn read_ebml_float(bytes []u8) f64 {
+	value := read_ebml_uint(bytes)
+	if bytes.len == 4 {
+		return f64(bits.f32_from_bits(u32(value)))
+	}
+	if bytes.len == 8 {
+		return bits.f64_from_bits(value)
+	}
+	return 0.0
 }
 
 fn read_ebml_text(bytes []u8) string {
